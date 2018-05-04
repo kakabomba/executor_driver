@@ -9,9 +9,9 @@ This driver act in following way:
 
 ```bash
 echo 'echo time is $(date)' > /dev/executor
-cat /dev/executor #Fri May  4 21:21:04 EEST 2018
+cat /dev/executor #time is Fri May  4 21:21:04 EEST 2018
 sleep 2
-cat /dev/executor #Fri May  4 21:21:06 EEST 2018
+cat /dev/executor #time is Fri May  4 21:21:06 EEST 2018
 ```
 
 See install.sh for details
