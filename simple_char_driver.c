@@ -7,131 +7,25 @@
 #include<asm/uaccess.h>
 #include<linux/uaccess.h>
 
-#include <linux/kmod.h>
+#include<linux/kmod.h>
 #include<linux/kernel.h>
 
-#define COMMAND_SIZE 1024*10
-#define OUTPUT_SIZE 1024*1024*10
+#define COMMAND_SIZE 1024
+#define FILE_BUFFER_SIZE 1024*10
 
-static char device_buffer[COMMAND_SIZE];
-static char output[OUTPUT_SIZE + 1];
+// #include"file_operations.h"
+#include"helpers.h"
+
+char command_buffer[COMMAND_SIZE];
 
 int openCount = 0;
 int closeCount = 0;
 int placeholder = 0;
+long int output_size = 0;
 
-struct file *file_open(const char *path, int flags, int rights) 
-{
-    struct file *filp = NULL;
-    mm_segment_t oldfs;
-    int err = 0;
+char __user  *user_buffers[1024];
 
-    oldfs = get_fs();
-    set_fs(get_ds());
-    filp = filp_open(path, flags, rights);
-    set_fs(oldfs);
-    if (IS_ERR(filp)) {
-        err = PTR_ERR(filp);
-        return NULL;
-    }
-    return filp;
-}
-Close a file (similar to close):
 
-void file_close(struct file *file) 
-{
-    filp_close(file, NULL);
-}
-
-int file_read(struct file *file, unsigned long long offset, unsigned char *data, unsigned int size) 
-{
-    mm_segment_t oldfs;
-    int ret;
-
-    oldfs = get_fs();
-    set_fs(get_ds());
-
-    ret = vfs_read(file, data, size, &offset);
-
-    set_fs(oldfs);
-    return ret;
-}   
-Writing data to a file (similar to pwrite):
-
-int file_write(struct file *file, unsigned long long offset, unsigned char *data, unsigned int size) 
-{
-    mm_segment_t oldfs;
-    int ret;
-
-    oldfs = get_fs();
-    set_fs(get_ds());
-
-    ret = vfs_write(file, data, size, &offset);
-
-    set_fs(oldfs);
-    return ret;
-}
-Syncing changes a file (similar to fsync):
-
-int file_sync(struct file *file) 
-{
-    vfs_fsync(file, 0);
-    return 0;
-}
-
-const char *byte_to_binary(int x)
-{
-    static char b[17];
-    b[0] = '\0';
-
-    int z;
-    for (z = 256*128; z > 0; z >>= 1)
-    {
-        strcat(b, ((x & z) == z) ? "1" : "0");
-    }
-
-    return b;
-}
-
-int rpr(void)
-{
-
-//  FILE *fp;
-  size_t readed;
-
-// /usr/bin/mkfifo
-
-  char * envp[] = { "HOME=/tmp", NULL };
-  char fifoname[256];
-  char fifocommand[COMMAND_SIZE + 100];
-  sprintf(fifoname, "/tmp/executor_fifo_%d", openCount);
-  char * argv[] = { "/usr/bin/mkfifo", fifoname , NULL };
-  sprintf(fifocommand, "/bin/sh %s > %s",device_buffer, currentcommand, fifoname);
-  char * bashargv[] = { "/bin/sh", fifocommand, NULL };
-  char * bashenvp[] = { "HOME=/tmp", "TERM=linux" , "PATH=/sbin:/usr/sbin:/bin:/usr/bin", NULL };
-  call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
-  printk(KERN_ALERT "Running %s\n", fifocommand);
-  call_usermodehelper(bashargv[0], bashargv, bashenvp, UMH_WAIT_EXEC);
-
-  return 0;
-  /* Open the command for reading. */
-//  fp = popen(device_buffer, "r");
-//  if (fp == NULL) {
-//    printk(KERN_ALERT "Failed to run command %s\n", device_buffer);
-//  }
-//  else {
-  /* Read the output a line at a time - output it. */
-//    readed = fread(output, OUTPUT_SIZE, 1, fp);
-//    if (readed >= OUTPUT_SIZE) {
-//      printk(KERN_ALERT "File %s output exceed %u bydes\n", device_buffer, OUTPUT_SIZE);
-//      }
-
-    /* close */
-//    pclose(fp);
-//  }
-
-  return 0;
-}
 
 ssize_t simple_char_driver_read (struct file *pfile, char __user *buffer, size_t length, loff_t *offset)
 {
@@ -141,27 +35,44 @@ ssize_t simple_char_driver_read (struct file *pfile, char __user *buffer, size_t
 	 * offset = variable to store offset for ONE read cycle.
 	 */
 
-    
+	unsigned int readed, toread;
+    struct file *file_to_read;
+    static char file_buffer[FILE_BUFFER_SIZE];
 
-	int bytesRead;
-	int bytesToRead = COMMAND_SIZE - *offset;
+    printk(KERN_ALERT "READING Simple Character Driver pfile=%p, buffer=%p, lenght=%ld, offset=%lld\n", pfile, buffer, length, *offset);
 
-    rpr();
-
-	// If we are at the end of the file, STOP READING!
-	if (bytesToRead == 0){
-		printk(KERN_ALERT "Reached the end of the file");
-		return bytesToRead;
-	}
+    file_to_read = find_or_open_file_for_buffer(buffer, command_buffer);
+    if (!file_to_read) {
+      printk(KERN_ALERT "Can't find nor open file for buffer=%p, Maybe to many files are opened\n", buffer);
+      return 0;
+      }
 	
+    
+//	bytesToRead = output_size - *offset;
+//    br = bytesToRead>length?length:bytesToRead;
+//    read_pointer = offset;
+    readed = file_read(file_to_read, *offset, file_buffer, FILE_BUFFER_SIZE>length?length:FILE_BUFFER_SIZE);
+	printk(KERN_ALERT "Readed from fifo file %d bytes (offset=%d, asked=%d, FILE_BUFFER_SIZE=%d, length=%d)", readed, *offset, FILE_BUFFER_SIZE>length?length:FILE_BUFFER_SIZE, FILE_BUFFER_SIZE,length);
+//    file_close(file_to_read);
+    
+	// If we are at the end of the file, STOP READING!
+//	if (readed == 0){
+//		printk(KERN_ALERT "Reached the end of the file");
+//        destroy_file_for_buffer(buffer);
+//        return cleanup();
+//	}
+
 	// Get bytes read by subtracting return of copy_to_user (returns unread bytes)
-	bytesRead = bytesToRead - copy_to_user(buffer, device_buffer + *offset, bytesToRead);
-	printk(KERN_ALERT "READING with Simple Character Driver. Reading %d bytes\n", bytesRead);
+	toread = copy_to_user(buffer, file_buffer, readed);
+	printk(KERN_ALERT "READ with Simple Character Driver. toread=%d bytes\n", toread);
 
 	// Set offset so that we can eventually reach the end of the file
-	*offset += bytesRead;
+	*offset += (readed-toread);
+    if (readed == toread) {
+        destroy_file_for_buffer(buffer);
+      }
 
-	return bytesRead;
+	return readed-toread;
 }
 
 
@@ -175,10 +86,14 @@ ssize_t simple_char_driver_write (struct file *pfile, const char __user *buffer,
 	 * placeholder = global var for the current write spot in the buffer
 	 */
 
-	
 	int bytesToWrite;
 	int bytesWritten;
 	int bytesAvailable = COMMAND_SIZE - *offset - placeholder;
+//    if (bytesAvailable<1) {
+//		 printk(KERN_ALERT "The device is out of space COMMAND_SIZE=%d offset=%d placeholder=%d", COMMAND_SIZE, *offset, placeholder);
+//         sprintf(command_buffer, "echo 'command is to long (max %d bytes)'", COMMAND_SIZE);
+//	     return 0;
+//        }
 
 	// Make sure there is sufficient space
 	if(bytesAvailable > length){
@@ -189,7 +104,7 @@ ssize_t simple_char_driver_write (struct file *pfile, const char __user *buffer,
 	}
 
 	//Get bites written by subtracting unwritten bites from retun of copy_from_user
-	bytesWritten = bytesToWrite - copy_from_user(device_buffer + *offset + placeholder, buffer, bytesToWrite);
+	bytesWritten = bytesToWrite - copy_from_user(command_buffer + *offset + placeholder, buffer, bytesToWrite);
 	
 	// If no space left:
 	if(bytesWritten == 0){
@@ -210,19 +125,19 @@ int simple_char_driver_open (struct inode *pinode, struct file *pfile)
 {
 	/* print to the log file that the device is opened and also print the number of times this device has been opened until now*/
 	openCount++;
-	printk(KERN_ALERT "OPENING Simple Character Driver. It has been opened %d times\n", openCount);
+/*	printk(KERN_ALERT "OPENING Simple Character Driver. It has been opened %d times\n", openCount);
 	printk(KERN_ALERT "OPENING with flags: %s\n", byte_to_binary(pfile->f_flags));
     printk(KERN_ALERT "OPENING with flag O_RDONLY: %d\n", (pfile->f_flags & O_RDONLY) ? 1: 0);
     printk(KERN_ALERT "OPENING with flag O_WRONLY: %d\n", (pfile->f_flags & O_WRONLY) ? 1: 0);
     printk(KERN_ALERT "OPENING with flag O_RDWR: %d\n", (pfile->f_flags & O_RDWR) ? 1: 0);
     printk(KERN_ALERT "OPENING with flag O_CREAT: %d\n", (pfile->f_flags & O_CREAT) ? 1: 0);
     printk(KERN_ALERT "OPENING with flag O_TRUNC: %d\n", (pfile->f_flags & O_TRUNC) ? 1: 0);
-    printk(KERN_ALERT "OPENING with flag O_APPEND: %d\n", (pfile->f_flags & O_APPEND) ? 1: 0);
+    printk(KERN_ALERT "OPENING with flag O_APPEND: %d\n", (pfile->f_flags & O_APPEND) ? 1: 0);*/
     if (pfile->f_flags & (O_WRONLY | O_RDWR)) {
       if (pfile->f_flags & (O_TRUNC)) {
         printk(KERN_ALERT "TRUNCATE\n");
         placeholder = 0;
-        memset(device_buffer, 0, sizeof device_buffer);
+        memset(command_buffer, 0, sizeof command_buffer);
         }
       }
 	return 0;
@@ -245,12 +160,46 @@ struct file_operations simple_char_driver_file_operations = {
 	.release = simple_char_driver_close
 };
 
+typedef struct ts {
+  int *one;
+  int *two;
+  } ts;
+
+struct ts *tsa[10];
+
+void printts(void) {
+  int i;
+  for (i=0; i<10; i++) {
+    printk(KERN_ALERT "tsa[%d]=%p={%p->%i, %p->%i}", i, tsa[i], 
+tsa[i]?tsa[i]->one:NULL, tsa[i]?*(tsa[i]->one):-1,
+tsa[i]?tsa[i]->two:NULL, tsa[i]?*(tsa[i]->two):-1);
+    }
+}
+
+void tts(int i, int k) {
+   struct ts a;
+   struct ts *pa;
+   int o, t;
+   o = k +1;
+   t = k + 2;
+//   printk(KERN_ALERT "po=%p, pt=%p", &o, &t);
+   a = (struct ts){&o, &t};
+   pa = &a;
+    printk(KERN_ALERT "i=%d, pa=%p={%p->%d, %p->%d}", i, pa,
+pa->one, *(pa->one),
+pa->two, *(pa->two)
+);
+   
+   tsa[i] = pa;
+}
+
+
 static int simple_char_driver_init(void)
 {
 	/* print to the log file that the init function is called.*/
-	printk(KERN_ALERT "INITIALIZING Simple Character Driver\n");
+	printk(KERN_ALERT "INITIALIZING Simple Character Driver!!!\n");
 	/* register the device */
-	register_chrdev( 301, "simple_driver", &simple_char_driver_file_operations);
+	register_chrdev( 303, "simple_driver", &simple_char_driver_file_operations);
 	return 0;
 }
 
@@ -258,9 +207,9 @@ static int simple_char_driver_init(void)
 static void simple_char_driver_exit(void)
 {
 	/* print to the log file that the exit function is called.*/
-	printk(KERN_ALERT "EXITING Simple Character Driver\n");
+	printk(KERN_ALERT "EXITING Simple Character Driver!!!\n");
 	/* unregister the device */
-	unregister_chrdev( 301, "simple_driver");
+	unregister_chrdev( 303, "simple_driver");
 }
 
 /* add module_init and module_exit to point to the corresponding init and exit function*/
