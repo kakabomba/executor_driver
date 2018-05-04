@@ -7,7 +7,8 @@ Often you have to use something that rely on local file, but you need generate i
 
 This driver act in following way:
 
-```echo 'echo time is $(date)' > /dev/executor
+```
+echo 'echo time is $(date)' > /dev/executor
 cat /dev/executor
 sleep 2
 cat /dev/executor
